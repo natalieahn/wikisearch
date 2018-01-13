@@ -4,10 +4,14 @@
 # 1/13/2017
 #
 # Class: WikiSearch
+#
 # Public methods:
-#     get_wiki_synset(terms):   Takes a term to search for, and returns the name of a
-#                               matching WordNet synset as used in the NLTK interface
-#                               (e.g. 'person.n.01').
+#
+#     get_wiki_synset(term):   Takes a term/phrase to search for, returns the name of
+#                              a matching WordNet synset as used in the NLTK interface
+#                              (e.g. 'person.n.01').
+#     get_wiki_ner(term):      Takes a term/phrase to search for, returns a tag from
+#                              the SpaCy Named Entity Recognition (NER) tag set
 
 import re, xlrd, xlwt
 import urllib.parse
@@ -24,6 +28,7 @@ class WikiSearch:
 	categ_synsets = {}
 	regexps = {}
 	pronouns = {}
+	ner_hypers = []
 	url_base = 'https://en.wikipedia.org/w/api.php?format=json&action=query'
 	sleep_time_btw_queries = 2
 
@@ -32,6 +37,7 @@ class WikiSearch:
 		self._load_categ_synsets(data_dir)
 		self._load_regexps(data_dir)
 		self._load_pronouns(data_dir)
+		self._load_ner_hypers(data_dir)
 
 	def _load_categ_synsets(self, data_dir):
 		with xlrd.open_workbook(data_dir+'/rule_files/wiki_rules.xlsx') as wb:
@@ -55,6 +61,13 @@ class WikiSearch:
 				row = sheet.row_values(r)
 				self.pronouns[row[1]] = row[0]
 
+	def _load_ner_hypers(self, data_dir):
+		with xlrd.open_workbook(data_dir+'/rule_files/wiki_rules.xlsx') as wb:
+			sheet = wb.sheet_by_name('ner')
+			for r in range(sheet.nrows):
+				row = sheet.row_values(r)
+				self.ner_hypers.append([row[0],set(row[1].split('|'))])
+
 	def get_wiki_synset(self, term):
 		url_title = urllib.parse.quote(term)
 		url = self.url_base + '&titles=%s&prop=categories|pageterms|extracts' % url_title
@@ -63,6 +76,16 @@ class WikiSearch:
 		synset = self._get_first_synset(rterms)
 		if synset: return synset
 		else: return self._get_wiki_search_synset(term)
+
+	def get_wiki_ner(self, term):
+		synset = self.get_wiki_synset(term)
+		if synset:
+			wn_synset = wn.synset(synset)
+			synset_hypers = set([hyper.name() for path in wn_synset.hypernym_paths() \
+								 for hyper in path])
+			for ner,ner_hypers in self.ner_hypers:
+				if any(hyper in synset_hypers for hyper in ner_hypers):
+					return ner
 
 	def _get_wiki_response(self, url):
 		for t in range(10):
